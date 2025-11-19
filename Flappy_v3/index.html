@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flappy Bird</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Flappy Bird</h1>
+        
+        <!-- Level Selection Screen -->
+        <div id="levelSelection" class="level-selection">
+            <h2>Select Level</h2>
+            <div id="coinDisplay" class="coin-display">💰 Coins: <span id="totalCoins">0</span></div>
+            <div id="levelButtons" class="level-buttons"></div>
+            <p class="level-instructions">Complete a level to unlock the next one!</p>
+        </div>
+        
+        <!-- Game Screen -->
+        <div id="gameScreen" class="hidden">
+            <canvas id="gameCanvas" width="400" height="600"></canvas>
+            <div class="instructions">
+                <p>Press <strong>SPACE</strong> to flap and avoid the pipes!</p>
+                <p id="levelInfo">Level: 1</p>
+                <p id="progress">Progress: 0 / 0</p>
+                <p id="score">Score: 0</p>
+                <p id="coins">💰 Coins: 0</p>
+                <p id="levelComplete" class="hidden">Level Complete! Press SPACE to continue</p>
+                <button id="backToMenu" class="back-button">Back to Menu</button>
+            </div>
+        </div>
+        
+        <!-- Game Over Popup -->
+        <div id="gameOverPopup" class="popup-overlay hidden">
+            <div class="popup-content">
+                <h2>Game Over!</h2>
+                <p>What would you like to do?</p>
+                <div id="gameOverCoins" class="coin-display-popup">💰 Coins: <span id="gameOverCoinsCount">0</span></div>
+                <div class="popup-buttons">
+                    <button id="playAgainBtn" class="popup-button play-again-btn">Play Again</button>
+                    <button id="continueBtn" class="popup-button continue-btn">Continue (10 coins)</button>
+                    <button id="returnToMenuBtn" class="popup-button return-to-menu-btn">Return to Main Menu</button>
+                </div>
+                <p id="notEnoughCoins" class="error-message hidden">Not enough coins!</p>
+            </div>
+        </div>
+        
+        <!-- Level Complete Popup -->
+        <div id="levelCompletePopup" class="popup-overlay hidden">
+            <div class="popup-content">
+                <h2>Congratulations!</h2>
+                <p>Level Complete!</p>
+                <div id="levelCompleteCoins" class="coin-display-popup">💰 Coins Earned: <span id="levelCompleteCoinsCount">0</span></div>
+                <div class="popup-buttons">
+                    <button id="nextLevelBtn" class="popup-button play-again-btn">Next Level</button>
+                    <button id="returnToMenuFromCompleteBtn" class="popup-button return-to-menu-btn">Return to Main Menu</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Countdown Overlay -->
+        <div id="countdownOverlay" class="countdown-overlay hidden">
+            <div class="countdown-content">
+                <div id="countdownText" class="countdown-text">3</div>
+                <p class="countdown-message">Get ready!</p>
+            </div>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
+
