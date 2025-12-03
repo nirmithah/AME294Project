@@ -74,6 +74,24 @@ let balloonReady = false;
 balloonImage.onload = () => { balloonReady = true; };
 balloonImage.src = 'Balloon.png';
 
+// Coin image
+const coinImage = new Image();
+let coinReady = false;
+let coinSpriteRatio = 1;
+coinImage.onload = () => {
+    coinReady = true;
+    if (coinImage.height !== 0) {
+        coinSpriteRatio = coinImage.width / coinImage.height;
+    }
+    coins.forEach(c => {
+        const size = c.size || 60;
+        c.width = size * coinSpriteRatio;
+        c.height = size;
+        c.hitRadius = Math.min(c.width, c.height) / 2;
+    });
+};
+coinImage.src = 'Coin.png';
+
 const defaultPalette = {
     skyTop: '#8bd0ff',
     skyMid: '#bde5ff',
@@ -87,6 +105,9 @@ const defaultPalette = {
     cloud: '#ffffff',
     cloudShadow: '#d2e8ff'
 };
+
+// Single pillar theme (blue-ish) used for every level
+const pillarTheme = { base: '#4f7ac8', shade: '#335ba4', accent1: '#4f7ac8', accent2: '#4f7ac8' };
 
 // Level definitions
 const levels = [
@@ -258,7 +279,7 @@ const PIPE_SPACING_DISTANCE = 320; // consistent horizontal spacing
 const SPEED_BASE_BOOST = 1.5; // global speed bump
 const SPEED_LEVEL_STEP = 0.25; // extra speed increase per level
 
-let pipeWidth = 60;
+let pipeWidth = 60; // original width for custom painted pillars
 let pipeGap = BASE_PIPE_GAP;
 let pipeSpeed = 3;
 let pipeSpawnInterval = Math.max(60, Math.round(PIPE_SPACING_DISTANCE / pipeSpeed));
@@ -286,6 +307,7 @@ let pipeSpawnTimer = 0;
 const coins = [];
 let coinSpawnTimer = 0;
 const coinSpawnInterval = 80; // Spawn coins more frequently than pipes
+const MIN_COIN_SPACING = 120; // prevent overlapping coin spawns
 
 // LocalStorage functions
 function getUnlockedLevels() {
@@ -549,8 +571,9 @@ function startLevel(levelIndex) {
     // Set level-specific settings
     pipeSpeed = currentLevel.pipeSpeed + SPEED_BASE_BOOST + (currentLevelIndex * SPEED_LEVEL_STEP);
     pipeGap = BASE_PIPE_GAP;
-    const spacing = currentLevel.pipeSpacingDistance || PIPE_SPACING_DISTANCE;
-    pipeSpawnInterval = Math.max(60, Math.round(spacing / pipeSpeed));
+    const baseSpacing = currentLevel.pipeSpacingDistance || PIPE_SPACING_DISTANCE;
+    const adjustedSpacing = baseSpacing + (pipeWidth - 60); // keep approximate edge-to-edge spacing after widening pipes
+    pipeSpawnInterval = Math.max(60, Math.round(adjustedSpacing / pipeSpeed));
     totalPipes = currentLevel.totalPipesOverride || FIXED_TOTAL_PIPES;
     
     // Reset game state
@@ -612,9 +635,11 @@ function createPipe() {
 
 // Create coin
 function createCoin() {
-    const coinSize = 28;
+    const coinSize = 60; // height (larger coins)
+    const coinWidth = coinSize * coinSpriteRatio;
+    const coinHeight = coinSize;
     // Aim coins near the center of the gap the player will fly through and keep them inside the opening
-    let margin = 22;
+    let margin = Math.max(30, coinHeight * 0.55);
     // Pick the rightmost (newest) pipe so the coin aligns with the upcoming gap
     let targetPipe = null;
     pipes.forEach(pipe => {
@@ -624,23 +649,35 @@ function createCoin() {
     });
     
     // Adjust margin if the gap gets tight relative to coin size
-    const usableGap = pipeGap - coinSize - margin * 2;
+    const usableGap = pipeGap - coinHeight - margin * 2;
     if (usableGap < 0) {
-        margin = Math.max(6, (pipeGap - coinSize) / 2);
+        margin = Math.max(6, (pipeGap - coinHeight) / 2);
     }
     
     const gapTop = targetPipe ? targetPipe.topHeight + margin : margin;
-    const gapBottom = targetPipe ? targetPipe.bottomY - coinSize - margin : canvas.height - coinSize - margin;
-    const centerY = targetPipe ? (targetPipe.topHeight + pipeGap / 2) - coinSize / 2 : (canvas.height / 2) - coinSize / 2;
+    const gapBottom = targetPipe ? targetPipe.bottomY - coinHeight - margin : canvas.height - coinHeight - margin;
+    const centerY = targetPipe ? (targetPipe.topHeight + pipeGap / 2) - coinHeight / 2 : (canvas.height / 2) - coinHeight / 2;
     const sway = targetPipe ? Math.max(10, pipeGap * 0.12) : 50;
     
     let coinY = centerY + (Math.random() * sway * 2 - sway);
     coinY = Math.max(gapTop, Math.min(gapBottom, coinY));
     
+    let spawnX = targetPipe ? targetPipe.x + pipeWidth + 18 : canvas.width;
+    if (coins.length > 0) {
+        const last = coins[coins.length - 1];
+        const lastWidth = last.width || last.size || coinWidth;
+        if (!last.collected && spawnX - (last.x + lastWidth) < MIN_COIN_SPACING) {
+            spawnX = last.x + lastWidth + MIN_COIN_SPACING;
+        }
+    }
+    
     coins.push({
-        x: canvas.width,
+        x: spawnX,
         y: coinY,
         size: coinSize,
+        width: coinWidth,
+        height: coinHeight,
+        hitRadius: Math.min(coinWidth, coinHeight) / 2,
         collected: false,
         rotation: 0
     });
@@ -1300,97 +1337,105 @@ function drawBird() {
     ctx.restore();
 }
 
-// Draw pipes as pixel clouds
+// Draw pipes with a shared painted pillar style
 function drawPipes() {
     const palette = getPalette();
     pipes.forEach(pipe => {
-        drawCloudColumn(pipe.x, 0, pipeWidth, pipe.topHeight, palette);
-        drawCloudColumn(pipe.x, pipe.bottomY, pipeWidth, canvas.height - pipe.bottomY, palette);
+        drawThemedPillarSegment(pipe.x, 0, pipe.topHeight, palette);
+        drawThemedPillarSegment(pipe.x, pipe.bottomY, canvas.height - pipe.bottomY, palette);
     });
 }
 
-function drawCloudColumn(x, y, width, height, palette) {
-    const radius = Math.min(width / 2, 18);
+function drawThemedPillarSegment(x, y, height, palette) {
+    if (height <= 0) return;
+    const theme = pillarTheme;
+    const width = pipeWidth;
+    const radius = Math.min(width * 0.18, 18);
     const gradient = ctx.createLinearGradient(x, y, x, y + height);
-    gradient.addColorStop(0, palette.obstacle);
-    gradient.addColorStop(1, palette.cloudShadow);
+    gradient.addColorStop(0, theme.base);
+    gradient.addColorStop(1, theme.shade);
     
+    ctx.save();
+    drawRoundedColumnPath(x, y, width, height, radius);
+    ctx.clip();
     ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.moveTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.closePath();
     ctx.fill();
     
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.beginPath();
-    ctx.moveTo(x + width * 0.18, y + 8);
-    ctx.lineTo(x + width * 0.32, y + 8);
-    ctx.quadraticCurveTo(x + width * 0.34, y + height - 8, x + width * 0.22, y + height - 10);
-    ctx.lineTo(x + width * 0.18, y + height - 12);
-    ctx.closePath();
-    ctx.fill();
+    // Inner highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(x + width * 0.08, y + radius, width * 0.16, Math.max(0, height - radius * 2));
     
-    ctx.shadowColor = 'rgba(0,0,0,0.18)';
-    ctx.shadowBlur = 8;
+    // Simple vertical accent band
+    // No additional accents; solid color pillar
+    
+    // Outline
+    ctx.restore();
+    ctx.save();
+    drawRoundedColumnPath(x, y, width, height, radius);
     ctx.strokeStyle = palette.outline;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.closePath();
+    ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 6;
     ctx.stroke();
     ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
+    ctx.restore();
 }
+
+function drawRoundedColumnPath(x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.closePath();
+}
+
 
 // Draw coins
 function drawCoins() {
     coins.forEach(coin => {
         if (!coin.collected) {
             const palette = getPalette();
-            const size = coin.size;
-            const radius = size / 2;
-            const centerX = coin.x + radius;
-            const centerY = coin.y + radius;
-            
-            const shine = ctx.createRadialGradient(
-                centerX - radius * 0.4,
-                centerY - radius * 0.4,
-                radius * 0.2,
-                centerX,
-                centerY,
-                radius
-            );
-            shine.addColorStop(0, '#ffe9a9');
-            shine.addColorStop(0.5, '#f6d860');
-            shine.addColorStop(1, '#e2a72a');
-            
-            ctx.fillStyle = shine;
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.strokeStyle = palette.outline;
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            ctx.fillStyle = 'rgba(0,0,0,0.15)';
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, radius * 0.35, 0, Math.PI * 2);
-            ctx.fill();
+            const width = coin.width || coin.size;
+            const height = coin.height || coin.size;
+            const radius = Math.min(width, height) / 2;
+            const centerX = coin.x + width / 2;
+            const centerY = coin.y + height / 2;
+
+            if (coinReady) {
+                ctx.drawImage(coinImage, coin.x, coin.y, width, height);
+            } else {
+                // Fallback: painted coin
+                const shine = ctx.createRadialGradient(
+                    centerX - radius * 0.4,
+                    centerY - radius * 0.4,
+                    radius * 0.2,
+                    centerX,
+                    centerY,
+                    radius
+                );
+                shine.addColorStop(0, '#ffe9a9');
+                shine.addColorStop(0.5, '#f6d860');
+                shine.addColorStop(1, '#e2a72a');
+                
+                ctx.fillStyle = shine;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.strokeStyle = palette.outline;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius * 0.35, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
     });
 }
@@ -1427,11 +1472,11 @@ function updatePipes() {
         if (score >= totalPipes && finishLineX === null) {
             let rightmostX = bird.x + 200;
             if (pipes.length > 0) {
-                pipes.forEach(pipe => {
-                    if (pipe.x + pipeWidth > rightmostX) {
-                        rightmostX = pipe.x + pipeWidth;
-                    }
-                });
+        pipes.forEach(pipe => {
+            if (pipe.x + pipeWidth > rightmostX) {
+                rightmostX = pipe.x + pipeWidth;
+            }
+        });
                 finishLineX = rightmostX + 150;
             } else {
                 finishLineX = bird.x + 200;
@@ -1484,7 +1529,8 @@ function updateCoins() {
         });
         
         for (let i = coins.length - 1; i >= 0; i--) {
-            if (coins[i].collected || coins[i].x + coins[i].size < 0) {
+            const coinWidth = coins[i].width || coins[i].size;
+            if (coins[i].collected || coins[i].x + coinWidth < 0) {
                 coins.splice(i, 1);
             }
         }
@@ -1501,17 +1547,18 @@ function checkCollisions() {
     }
     
     if (!isInvincible) {
+        const hitboxPadding = Math.max(0, pipeWidth * 0.4); // much slimmer hitbox; match only the visible core width
         pipes.forEach(pipe => {
-            if (bird.x < pipe.x + pipeWidth &&
-                bird.x + bird.width > pipe.x &&
-                bird.y < pipe.topHeight) {
+            const leftX = pipe.x + hitboxPadding;
+            const rightX = pipe.x + pipeWidth - hitboxPadding;
+            const overlapX = bird.x < rightX && bird.x + bird.width > leftX;
+            
+            if (overlapX && bird.y < pipe.topHeight) {
                 collidingPipe = pipe;
                 gameOver();
             }
             
-            if (bird.x < pipe.x + pipeWidth &&
-                bird.x + bird.width > pipe.x &&
-                bird.y + bird.height > pipe.bottomY) {
+            if (overlapX && bird.y + bird.height > pipe.bottomY) {
                 collidingPipe = pipe;
                 gameOver();
             }
@@ -1520,8 +1567,11 @@ function checkCollisions() {
     
     coins.forEach(coin => {
         if (!coin.collected) {
-            const coinCenterX = coin.x + coin.size / 2;
-            const coinCenterY = coin.y + coin.size / 2;
+            const coinWidth = coin.width || coin.size;
+            const coinHeight = coin.height || coin.size;
+            const coinRadius = coin.hitRadius || Math.min(coinWidth, coinHeight) / 2;
+            const coinCenterX = coin.x + coinWidth / 2;
+            const coinCenterY = coin.y + coinHeight / 2;
             const birdCenterX = bird.x + bird.width / 2;
             const birdCenterY = bird.y + bird.height / 2;
             
@@ -1530,7 +1580,7 @@ function checkCollisions() {
                 Math.pow(coinCenterY - birdCenterY, 2)
             );
             
-            if (distance < (coin.size / 2 + bird.width / 2)) {
+            if (distance < (coinRadius + bird.width / 2)) {
                 coin.collected = true;
                 levelCoinsCollected++;
                 addCoin();
